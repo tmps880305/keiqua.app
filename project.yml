@@ -1,0 +1,96 @@
+name: Keiqua
+
+options:
+  bundleIdPrefix: com.keiqua
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    # DEVELOPMENT_TEAM: XXXXXXXXXX   # 填入 Team ID 後取消註解
+    TARGETED_DEVICE_FAMILY: "1,2"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  # 共用邏輯（解析器、格式化、輸入狀態機）。純 Swift，不依賴 UIKit。
+  # 用靜態連結：App 與 extension 都直接把它編進自己的執行檔，
+  # 不需要額外嵌入 framework，也省掉 extension 啟動時的動態載入。
+  KeiquaCore:
+    type: framework
+    platform: iOS
+    sources: [KeiquaCore]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.keiqua.app.core
+        MACH_O_TYPE: staticlib
+        APPLICATION_EXTENSION_API_ONLY: YES
+        GENERATE_INFOPLIST_FILE: YES
+
+  # Host App（SwiftUI）
+  Keiqua:
+    type: application
+    platform: iOS
+    sources: [Keiqua]
+    dependencies:
+      - target: KeiquaCore
+      - target: KeiquaKeyboard
+    info:
+      path: Keiqua/Info.plist
+      properties:
+        CFBundleDisplayName: Keiqua
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.keiqua.app
+
+  # Keyboard Extension（UIKit）
+  KeiquaKeyboard:
+    type: app-extension
+    platform: iOS
+    sources: [KeiquaKeyboard]
+    dependencies:
+      - target: KeiquaCore
+    info:
+      path: KeiquaKeyboard/Info.plist
+      properties:
+        CFBundleDisplayName: Keiqua
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            RequestsOpenAccess: false   # 階段 5（匯率）才改為 true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.keiqua.app.keyboard
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  KeiquaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [KeiquaTests]
+    dependencies:
+      - target: KeiquaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.keiqua.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Keiqua:
+    build:
+      targets:
+        Keiqua: all
+    test:
+      targets:
+        - KeiquaTests
