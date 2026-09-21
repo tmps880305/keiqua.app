@@ -1,9 +1,15 @@
 import UIKit
+import KeiquaCore
 
-// 階段 0：空白鍵盤，只有一顆地球鍵，用來驗證 extension 能被載入與切換。
+// 目前仍是空白鍵盤（按鍵 UI 在步驟 2-4）。這裡先把 InputController 接上生命週期。
 final class KeyboardViewController: UIInputViewController {
 
     private let globeButton = UIButton(type: .system)
+
+    // 由 controller 擁有；SystemTextInputProxy 以 unowned 參照回來，不會循環參照。
+    private lazy var inputController = InputController(
+        proxy: SystemTextInputProxy(controller: self)
+    )
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -26,6 +32,17 @@ final class KeyboardViewController: UIInputViewController {
             view.heightAnchor.constraint(equalToConstant: 260)
         ])
         updateGlobeButtonVisibility()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // 鍵盤重新出現可能是換了輸入框，緩衝區不可沿用
+        inputController.reset()
+    }
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        inputController.textDidChange()
     }
 
     override func viewWillLayoutSubviews() {
