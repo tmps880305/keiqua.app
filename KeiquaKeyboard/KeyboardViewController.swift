@@ -25,5 +25,16 @@ final class KeyboardViewController: UIInputViewController {
             globeButton.heightAnchor.constraint(equalToConstant: 44),
             view.heightAnchor.constraint(equalToConstant: 260)
         ])
+        updateGlobeButtonVisibility()
+    }
+
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        updateGlobeButtonVisibility()
+    }
+
+    // 系統已提供地球鍵時（Face ID 機型）為 false，此時不需要自己畫。
+    private func updateGlobeButtonVisibility() {
+        globeButton.isHidden = !needsInputModeSwitchKey
     }
 }
