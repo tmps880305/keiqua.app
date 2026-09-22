@@ -1,7 +1,7 @@
 import UIKit
 import KeiquaCore
 
-/// 鍵盤畫面：上方一條窄的頂部列（地球鍵、提示文字、C、↵），下方 5 列 × 4 欄的計算機按鍵。
+/// 鍵盤畫面：上方一條窄的頂部列（地球鍵、提示文字、↵），下方 5 列 × 4 欄的計算機按鍵。
 /// 純程式碼排版，只用 UIStackView 與 UIButton，視圖階層很淺。
 final class KeyboardView: UIView {
 
@@ -89,10 +89,9 @@ final class KeyboardView: UIView {
         messageLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         updateMessage()
 
-        let clear = makeKey(.clear, style: .function, title: "C", fontSize: 15, accessibilityLabel: "清除")
         let newline = makeKey(.newline, style: .function, symbol: "return", fontSize: 15, accessibilityLabel: "換行")
 
-        let bar = UIStackView(arrangedSubviews: [globeButton, messageLabel, clear, newline])
+        let bar = UIStackView(arrangedSubviews: [globeButton, messageLabel, newline])
         bar.axis = .horizontal
         bar.alignment = .fill
         bar.spacing = Metrics.spacing
@@ -100,7 +99,6 @@ final class KeyboardView: UIView {
         NSLayoutConstraint.activate([
             bar.heightAnchor.constraint(equalToConstant: Metrics.topBarHeight),
             globeButton.widthAnchor.constraint(equalToConstant: Metrics.topBarHeight),
-            clear.widthAnchor.constraint(equalToConstant: 56),
             newline.widthAnchor.constraint(equalToConstant: 56),
         ])
         return bar

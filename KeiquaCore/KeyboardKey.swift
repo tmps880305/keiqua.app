@@ -21,7 +21,6 @@ public enum KeyboardKey: Equatable {
     case rightParen
     case percent
     case backspace
-    case clear
     case equals
     case newline
 }

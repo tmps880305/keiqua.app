@@ -2,7 +2,8 @@ import XCTest
 @testable import KeiquaCore
 
 /// 測試用的輪子：用字串描述按鍵順序，例如 press("200+300=")。
-/// 按鍵對應：0-9 . + - × ÷ ( ) % = 、⌫ 退格、C 清除、\n 換行
+/// 按鍵對應：0-9 . + - × ÷ ( ) % = 、⌫ 退格、\n 換行
+/// + - × ÷ = 在這裡仍用單一字元描述按鍵序列，InputController 內部會轉成前後加空白的插入文字。
 @MainActor
 private final class Harness {
     let proxy: FakeTextInputProxy
@@ -37,7 +38,6 @@ private final class Harness {
             case "%": controller.handle(.percent)
             case "=": controller.handle(.equals)
             case "⌫": controller.handle(.backspace)
-            case "C": controller.handle(.clear)
             case "\n": controller.handle(.newline)
             default: XCTFail("unknown key \(ch)")
             }
@@ -48,35 +48,41 @@ private final class Harness {
 @MainActor
 final class InputControllerTests: XCTestCase {
 
-    // MARK: 基本輸入與 "="
+    // MARK: 基本輸入與空白
 
     func testTypingInsertsCharactersImmediately() {
         let h = Harness()
         h.press("200")
         XCTAssertEqual(h.proxy.text, "200")
         h.press("+")
-        XCTAssertEqual(h.proxy.text, "200+")
+        XCTAssertEqual(h.proxy.text, "200 + ")
         h.press("300")
-        XCTAssertEqual(h.proxy.text, "200+300")
-        XCTAssertEqual(h.controller.expression, "200+300")
+        XCTAssertEqual(h.proxy.text, "200 + 300")
+        XCTAssertEqual(h.controller.expression, "200 + 300")
     }
 
-    func testEqualsInsertsResult() {
+    func testParenthesesAndPercentHaveNoSurroundingSpace() {
+        let h = Harness()
+        h.press("(1+2)%")
+        XCTAssertEqual(h.proxy.text, "(1 + 2)%")
+    }
+
+    func testEqualsInsertsSpacedResultWithTrailingSpace() {
         let h = Harness()
         h.press("200+300=")
-        XCTAssertEqual(h.proxy.text, "200+300=500")
+        XCTAssertEqual(h.proxy.text, "200 + 300 = 500 ")
         XCTAssertEqual(h.controller.phase, .evaluated(result: "500"))
-        XCTAssertEqual(h.controller.expression, "200+300")
+        XCTAssertEqual(h.controller.expression, "200 + 300")
     }
 
     func testResultsFromSpec() {
         let cases: [(String, String)] = [
-            ("0.1+0.2=", "0.1+0.2=0.3"),
-            ("10÷4=", "10÷4=2.5"),
-            ("1÷3=", "1÷3=0.3333333333"),
-            ("-5+3=", "-5+3=-2"),
-            ("2+3×4=", "2+3×4=14"),
-            ("(2+3)×4=", "(2+3)×4=20"),
+            ("0.1+0.2=", "0.1 + 0.2 = 0.3 "),
+            ("10÷4=", "10 ÷ 4 = 2.5 "),
+            ("1÷3=", "1 ÷ 3 = 0.3333333333 "),
+            ("-5+3=", " - 5 + 3 = -2 "),
+            ("2+3×4=", "2 + 3 × 4 = 14 "),
+            ("(2+3)×4=", "(2 + 3) × 4 = 20 "),
         ]
         for (keys, expected) in cases {
             let h = Harness()
@@ -95,62 +101,56 @@ final class InputControllerTests: XCTestCase {
     func testEqualsOnSingleNumberStillInsertsResult() {
         let h = Harness()
         h.press("5=")
-        XCTAssertEqual(h.proxy.text, "5=5")
+        XCTAssertEqual(h.proxy.text, "5 = 5 ")
     }
 
     func testEqualsTwiceDoesNotDuplicateResult() {
         let h = Harness()
         h.press("1+1==")
-        XCTAssertEqual(h.proxy.text, "1+1=2")
+        XCTAssertEqual(h.proxy.text, "1 + 1 = 2 ")
     }
 
-    // MARK: "=" 之後
+    // MARK: "=" 之後一律開新算式
 
-    func testOperatorAfterEqualsContinuesFromResult() {
-        let h = Harness()
-        h.press("200+300=+")
-        XCTAssertEqual(h.proxy.text, "200+300=500+")
-        XCTAssertEqual(h.controller.expression, "500+")
-        h.press("100=")
-        XCTAssertEqual(h.proxy.text, "200+300=500+100=600")
-    }
-
-    func testPercentAfterEqualsContinuesFromResult() {
-        let h = Harness()
-        h.press("50=%")
-        XCTAssertEqual(h.proxy.text, "50=50%")
-        h.press("=")
-        XCTAssertEqual(h.proxy.text, "50=50%=0.5")
-    }
-
-    func testDigitAfterEqualsStartsNewExpressionOnNewLine() {
+    func testAnyKeyAfterEqualsStartsNewExpressionRightAfterTrailingSpace() {
         let h = Harness()
         h.press("200+300=7")
-        XCTAssertEqual(h.proxy.text, "200+300=500\n7")
+        XCTAssertEqual(h.proxy.text, "200 + 300 = 500 7")
         XCTAssertEqual(h.controller.expression, "7")
-        XCTAssertEqual(h.controller.sessionText, "\n7")
         XCTAssertEqual(h.controller.phase, .editing)
         h.press("+1=")
-        XCTAssertEqual(h.proxy.text, "200+300=500\n7+1=8")
+        XCTAssertEqual(h.proxy.text, "200 + 300 = 500 7 + 1 = 8 ")
+    }
+
+    func testOperatorAfterEqualsStartsNewExpressionRatherThanContinuing() {
+        let h = Harness()
+        h.press("200+300=+")
+        XCTAssertEqual(h.proxy.text, "200 + 300 = 500  + ")
+        XCTAssertEqual(h.controller.expression, " + ")
+        // 以運算符開頭不是合法算式，交給 "=" 報格式錯誤
+        h.press("=")
+        XCTAssertEqual(h.currentError, .syntax)
     }
 
     func testLeftParenAndDecimalPointAfterEqualsStartNewExpression() {
         let h1 = Harness()
         h1.press("1+1=(")
-        XCTAssertEqual(h1.proxy.text, "1+1=2\n(")
+        XCTAssertEqual(h1.proxy.text, "1 + 1 = 2 (")
         XCTAssertEqual(h1.controller.expression, "(")
 
         let h2 = Harness()
         h2.press("1+1=.")
-        XCTAssertEqual(h2.proxy.text, "1+1=2\n.")
+        XCTAssertEqual(h2.proxy.text, "1 + 1 = 2 .")
         XCTAssertEqual(h2.controller.expression, ".")
     }
 
-    func testRightParenAfterEqualsIsIgnored() {
+    func testRightParenAfterEqualsStartsNewExpressionAndErrorsOnEquals() {
         let h = Harness()
         h.press("1+1=)")
-        XCTAssertEqual(h.proxy.text, "1+1=2")
-        XCTAssertEqual(h.controller.phase, .evaluated(result: "2"))
+        XCTAssertEqual(h.proxy.text, "1 + 1 = 2 )")
+        XCTAssertEqual(h.controller.expression, ")")
+        h.press("=")
+        XCTAssertEqual(h.currentError, .syntax)
     }
 
     // MARK: 錯誤
@@ -158,7 +158,7 @@ final class InputControllerTests: XCTestCase {
     func testDivisionByZeroInsertsNoResultAndShowsError() {
         let h = Harness()
         h.press("1÷0=")
-        XCTAssertEqual(h.proxy.text, "1÷0")
+        XCTAssertEqual(h.proxy.text, "1 ÷ 0")
         XCTAssertEqual(h.currentError, .divisionByZero)
         XCTAssertEqual(h.controller.phase, .editing)
     }
@@ -175,7 +175,7 @@ final class InputControllerTests: XCTestCase {
     func testSyntaxErrors() {
         for keys in ["1+=", "(1+2=", "1+2)=", "()=", "2(3)="] {
             let h = Harness()
-            h.press(keys.replacingOccurrences(of: "=", with: ""))
+            h.press(String(keys.dropLast()))
             let before = h.proxy.text
             h.press("=")
             XCTAssertEqual(h.proxy.text, before, keys)
@@ -197,23 +197,23 @@ final class InputControllerTests: XCTestCase {
     func testBackspaceThenRecalculate() {
         let h = Harness()
         h.press("12+34⌫")
-        XCTAssertEqual(h.proxy.text, "12+3")
-        XCTAssertEqual(h.controller.expression, "12+3")
+        XCTAssertEqual(h.proxy.text, "12 + 3")
+        XCTAssertEqual(h.controller.expression, "12 + 3")
         h.press("5=")
-        XCTAssertEqual(h.proxy.text, "12+35=47")
+        XCTAssertEqual(h.proxy.text, "12 + 35 = 47 ")
     }
 
-    func testBackspaceAfterEqualsUndoesTheWholeResult() {
+    func testBackspaceAfterEqualsUndoesTheWholeSpacedResult() {
         let h = Harness()
         h.press("200+300=⌫")
-        XCTAssertEqual(h.proxy.text, "200+300")
+        XCTAssertEqual(h.proxy.text, "200 + 300")
         XCTAssertEqual(h.controller.phase, .editing)
-        XCTAssertEqual(h.controller.expression, "200+300")
+        XCTAssertEqual(h.controller.expression, "200 + 300")
         h.press("=")
-        XCTAssertEqual(h.proxy.text, "200+300=500")
+        XCTAssertEqual(h.proxy.text, "200 + 300 = 500 ")
         h.press("⌫⌫")
-        XCTAssertEqual(h.proxy.text, "200+30")
-        XCTAssertEqual(h.controller.expression, "200+30")
+        XCTAssertEqual(h.proxy.text, "200 + 30")
+        XCTAssertEqual(h.controller.expression, "200 + 30")
     }
 
     func testBackspaceOnEmptyBufferStillDeletesExistingText() {
@@ -234,44 +234,40 @@ final class InputControllerTests: XCTestCase {
         XCTAssertEqual(h.proxy.text, "Hi")
     }
 
-    func testBackspaceAfterNewExpressionThenNewline() {
+    func testBackspaceCharByCharThroughAnOperatorBlock() {
+        let h = Harness()
+        h.press("1+")
+        XCTAssertEqual(h.proxy.text, "1 + ")
+        h.press("⌫")
+        XCTAssertEqual(h.proxy.text, "1 +")
+        h.press("⌫")
+        XCTAssertEqual(h.proxy.text, "1 ")
+        h.press("⌫")
+        XCTAssertEqual(h.proxy.text, "1")
+        XCTAssertEqual(h.controller.expression, "1")
+    }
+
+    func testBackspaceAfterNewExpressionFollowingEquals() {
         let h = Harness()
         h.press("1+1=5⌫")
-        XCTAssertEqual(h.proxy.text, "1+1=2\n")
+        // 刪掉新算式打的 "5"，正好回到舊結果尾端的空白，不會多刪或少刪
+        XCTAssertEqual(h.proxy.text, "1 + 1 = 2 ")
         XCTAssertEqual(h.controller.expression, "")
-        h.press("⌫")
-        XCTAssertEqual(h.proxy.text, "1+1=2")
-    }
-
-    // MARK: 清除
-
-    func testClearRemovesOnlyTextInsertedThisSession() {
-        let h = Harness()
-        h.proxy.text = "Hi "
-        h.press("1+2C")
-        XCTAssertEqual(h.proxy.text, "Hi ")
-        XCTAssertEqual(h.controller.expression, "")
-        XCTAssertEqual(h.controller.sessionText, "")
-    }
-
-    func testClearAfterEqualsRemovesResultToo() {
-        let h = Harness()
-        h.proxy.text = "Hi "
-        h.press("1+2=C")
-        XCTAssertEqual(h.proxy.text, "Hi ")
         XCTAssertEqual(h.controller.phase, .editing)
+        // 此時 "= 2 " 已經是單純殘留文字（phase 不再是 evaluated），繼續退格只能一個字元一個字元刪
+        h.press("⌫⌫")
+        XCTAssertEqual(h.proxy.text, "1 + 1 = ")
     }
 
-    func testClearAfterNewExpressionKeepsPreviousLine() {
-        let h = Harness()
-        h.press("1+1=5C")
-        XCTAssertEqual(h.proxy.text, "1+1=2")
-    }
+    // MARK: 沒有清除鍵：靠退格慢慢刪
 
-    func testClearAfterContinuationRemovesWholeSession() {
+    func testNoClearKeyBackspaceRemovesEverythingGradually() {
         let h = Harness()
-        h.press("1+1=+3C")
-        XCTAssertEqual(h.proxy.text, "")
+        h.proxy.text = "Hi "
+        h.press("1+2")
+        for _ in 0..<h.proxy.text.count - 3 { h.press("⌫") }
+        XCTAssertEqual(h.proxy.text, "Hi ")
+        XCTAssertEqual(h.controller.expression, "")
     }
 
     // MARK: 換行
@@ -283,7 +279,7 @@ final class InputControllerTests: XCTestCase {
         XCTAssertEqual(h.controller.expression, "")
         XCTAssertEqual(h.controller.sessionText, "")
         h.press("3=")
-        XCTAssertEqual(h.proxy.text, "12\n3=3")
+        XCTAssertEqual(h.proxy.text, "12\n3 = 3 ")
     }
 
     // MARK: 數字規則
@@ -299,7 +295,7 @@ final class InputControllerTests: XCTestCase {
     func testDecimalPointAllowedInEachNumber() {
         let h = Harness()
         h.press(".5+.5=")
-        XCTAssertEqual(h.proxy.text, ".5+.5=1")
+        XCTAssertEqual(h.proxy.text, ".5 + .5 = 1 ")
     }
 
     func testSeventeenthSignificantDigitIsRejected() {
@@ -310,7 +306,7 @@ final class InputControllerTests: XCTestCase {
         XCTAssertEqual(h.currentError, .numberTooLong)
         // 運算符之後可以開始新的數字
         h.press("+7")
-        XCTAssertEqual(h.proxy.text, "1234567890123456+7")
+        XCTAssertEqual(h.proxy.text, "1234567890123456 + 7")
         XCTAssertNil(h.currentError)
     }
 
@@ -323,10 +319,11 @@ final class InputControllerTests: XCTestCase {
 
     func testExpressionLengthIsCapped() {
         let h = Harness()
-        h.press(String(repeating: "1+", count: 100))
-        XCTAssertEqual(h.controller.expression.count, InputController.maxExpressionLength)
+        h.press(String(repeating: "1+", count: 60))
+        let cappedLength = h.controller.expression.count
+        XCTAssertLessThanOrEqual(cappedLength, InputController.maxExpressionLength)
         h.press("1")
-        XCTAssertEqual(h.controller.expression.count, InputController.maxExpressionLength)
+        XCTAssertEqual(h.controller.expression.count, cappedLength)
         XCTAssertEqual(h.currentError, .expressionTooLong)
     }
 
@@ -342,8 +339,8 @@ final class InputControllerTests: XCTestCase {
         let h = Harness()
         h.enableSynchronousCallbacks()
         h.press("200+300=")
-        XCTAssertEqual(h.proxy.text, "200+300=500")
-        XCTAssertEqual(h.controller.expression, "200+300")
+        XCTAssertEqual(h.proxy.text, "200 + 300 = 500 ")
+        XCTAssertEqual(h.controller.expression, "200 + 300")
         XCTAssertEqual(h.controller.phase, .evaluated(result: "500"))
     }
 
@@ -351,7 +348,7 @@ final class InputControllerTests: XCTestCase {
         let h = Harness()
         h.press("200+300")
         h.controller.textDidChange()
-        XCTAssertEqual(h.controller.expression, "200+300")
+        XCTAssertEqual(h.controller.expression, "200 + 300")
     }
 
     func testExternalEditResetsBuffer() {
@@ -370,9 +367,8 @@ final class InputControllerTests: XCTestCase {
         h.proxy.text = "other"
         h.controller.textDidChange()
         XCTAssertEqual(h.controller.phase, .editing)
-        // 之後按運算符不會再沿用舊結果
         h.press("+")
-        XCTAssertEqual(h.controller.expression, "+")
+        XCTAssertEqual(h.controller.expression, " + ")
     }
 
     func testNilContextIsTreatedAsUnknown() {
@@ -380,15 +376,15 @@ final class InputControllerTests: XCTestCase {
         h.press("200+")
         h.proxy.text = ""   // documentContextBeforeInput 為 nil
         h.controller.textDidChange()
-        XCTAssertEqual(h.controller.expression, "200+")
+        XCTAssertEqual(h.controller.expression, "200 + ")
     }
 
     func testTruncatedContextIsTolerated() {
         let h = Harness()
         h.press("200+300")
-        h.proxy.text = "+300"   // 系統只給了游標前的一小段
+        h.proxy.text = "300"   // 系統只給了游標前的一小段
         h.controller.textDidChange()
-        XCTAssertEqual(h.controller.expression, "200+300")
+        XCTAssertEqual(h.controller.expression, "200 + 300")
     }
 
     func testExistingTextBeforeSessionIsTolerated() {
@@ -396,15 +392,18 @@ final class InputControllerTests: XCTestCase {
         h.proxy.text = "Total: "
         h.press("1+2")
         h.controller.textDidChange()
-        XCTAssertEqual(h.controller.expression, "1+2")
+        XCTAssertEqual(h.controller.expression, "1 + 2")
     }
 
-    func testParagraphLimitedContextAfterNewLineIsTolerated() {
+    /// 游標被移到算式中間（而非文字尾端）視為外部變動，屬於已知限制
+    func testCursorMovedIntoMiddleOfExpressionIsTreatedAsExternalChange() {
         let h = Harness()
-        h.press("1+1=5")
-        h.proxy.text = "5"   // 部分 App 的 context 只到目前這一段
+        h.press("200+300=")
+        // 模擬游標被移到 "3" 和 "00" 之間，游標前文字變成 "200 + 3"
+        h.proxy.text = "200 + 3"
         h.controller.textDidChange()
-        XCTAssertEqual(h.controller.expression, "5")
+        XCTAssertEqual(h.controller.expression, "")
+        XCTAssertEqual(h.controller.phase, .editing)
     }
 
     func testResetClearsEverything() {
