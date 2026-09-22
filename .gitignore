@@ -1,0 +1,20 @@
+# Xcode / XcodeGen 產物（由 project.yml 產生）
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+.build/
+
+# macOS
+.DS_Store
+
+# JetBrains IDE
+.idea/
+
+# UI 參考截圖（Apple 內建 App，不進版控）
+docs/reference/
+
+# 本機設定與備份
+*.xcconfig.local
+*.orig
